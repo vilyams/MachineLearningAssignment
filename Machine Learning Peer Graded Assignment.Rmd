@@ -1,0 +1,169 @@
+---
+title: "Machine Learning in R - Assignment -JHU"
+author: "William Alexander"
+date: "May 11, 2018"
+output: html_document
+---
+```{r message=FALSE}
+library(caret)
+library(kernlab)
+library(randomForest)
+set.seed(1234)
+```
+# download files and save in working directory 
+
+```{r cache=TRUE}
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "pml-train.csv", mode="wb")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "pml-test.csv", mode="wb")
+
+# load data from CSV
+pmi = read.csv("pml-train.csv")
+validation = read.csv("pml-test.csv")
+```
+Partitioning training data into two sets for testing(30%) and training (70%) 
+```{r cache=TRUE}
+# data partition
+inTrain = createDataPartition(pmi$classe,p=.7, list=FALSE)
+training = pmi[inTrain,]
+testing = pmi[-inTrain,]
+
+str(training)
+```
+The data seems to have a lot of blank values and most of the numeric fiels have been read as factor variables automatically. Therefore created this function that will get the dataset and the outcome variable index as the parameter and return a clean dataframe by converting all the factor variables into numeric and also replacing the blank values with 0.
+```{r}
+convertToNumber <- function(w, cInd){
+    namelist <-  names(w)
+    df <- data.frame(x=rep(NA,dim(w)[1]))
+    for(i in 1:length(namelist))
+    {
+        #Only convert factor variables and (not outcome variable) to numeric
+        if(is.factor(w[,i]) & !(i %in% cInd)){
+            w[,i] <- as.numeric(as.character(w[,i]))
+        }
+        #if all values in a column are NA then remove that column
+        if(!(sum(is.na(w[,i]))==dim(w)[1]) & !(i %in% cInd))
+        {
+            if(!sum(w[,i],na.rm = TRUE) == 0){
+                df[[namelist[i]]] <- w[,i]
+            }
+            
+        }
+        
+    }
+    df[,namelist[cInd]] <- w[,cInd]
+    df <- df[,-1]
+    df 
+}
+```
+#Exploratory Analysis
+Removing the columns 1 to 7 from traing and data sets.
+```{r warning=FALSE, message=FALSE}
+#Cleaning trainin dataset
+#remove columns 1 to 7
+training <- training[,-c(1:7)]
+#converting factors to numeric variables
+training <- convertToNumber(training,153)
+```
+There are many columns with NA value. Replace all these NA values with value 0
+```{r}
+#impute and standardize
+training[is.na(training)] <- 0
+```
+#Check for correlation between variables
+```{r}
+#run correlation
+m = abs(cor(training[,-c(dim(training)[2])]))
+diag(m) <- 0
+table(which(m > 0.99, arr.ind = TRUE))
+```
+There are many variables with high corrleation therefore running a featureplot to see the relation.
+#Plots
+```{r}
+featurePlot(x=training[,c(1,5,9,11,12)], y=training$classe, plot = "pairs")
+```
+
+In the above featureplot, it seems that max_roll_belt and max_yaw_belt provides almost same information, but max_yaw_belt gives better prediction, We can predict below columns contribute most variability.
+
+1. kurtosis_roll_belt
+2. max_yaw_belt
+3. max_roll_belt
+
+```{r }
+featurePlot(x=training[,c(14,24,32,45,71,77,83,86,112,118,121)], y=training$classe, plot = "pairs")
+```
+
+Form the featureplot above, below columns provide more variability than others.
+
+1. avg_yaw_belt
+2. stddev_pitch_arm
+3. max_yaw_forearm
+4. min_yaw_forearm
+
+Checking whether these variables seperate the outcome variable using a simple plot.
+```{r warning=FALSE}
+plot(log(training[,112]+training[,9]+training[,77]+training[,5]+training[,71]+training[,1]),log(training[,118]+training[,121]+training[,24]+training[,83]+training[,86]+training[,11]+training[,14]+training[,45]+training[,32]),col=training$classe, xlim=c(0,6), xlab = "Predictors Set 1", ylab = "Predictors Set 2")
+
+
+# Run algorithms using 10-fold cross validation
+control <- trainControl(method="cv", number=10)
+metric <- "Accuracy"
+```
+#Building different models to fit
+Now fitting models CART, Knn, SVM, RF and GBM to see the best model
+```{r cache=TRUE}
+# CART 50%
+set.seed(7)
+fit.cart <- train(classe~.,data=training, method="rpart",metric=metric,trControl=control) 
+# kNN 89%
+set.seed(7) 
+fit.knn <- train(classe~., data=training, method="knn", trControl=control)
+# SVM 90%
+fit.svm <- train(classe~., data=training, method="svmRadial", metric=metric, trControl=control)
+# Random Forest 
+set.seed(7)
+fit.rf <- train(classe~., data=training, method="rf", trControl=control)
+#GBM 96%
+set.seed(7)
+fit.gbm <- train(classe~., data=training, method="gbm", trControl=control, verbose=FALSE)
+
+```
+
+# summarize accuracy of models
+```{r}
+results <- resamples(list(cart=fit.cart, knn=fit.knn, svm=fit.svm, rf=fit.rf))
+summary(results)
+
+```
+The accuracy of gbm model seems to be the best. Therefore choosing the GBM as the final fit.
+# summarize Best Model
+```{r}
+print(fit.gbm)
+```
+#Cleaning testing dataset
+```{r warning=FALSE, message=FALSE}
+#remove columns 1 to 7
+testing <- testing[,-c(1:7)]
+#converting factors to numeric variables
+testing <- convertToNumber(testing,153)
+#impute and standardize
+testing[is.na(testing)] <- 0
+```
+# estimate skill of GBM on the test dataset
+```{r}
+predictions <- predict(fit.gbm, testing)
+confusionMatrix(predictions, testing$classe)
+```
+#testing 20 random samples from validation dataset
+```{r warning=FALSE, message=FALSE}
+#Cleaning validation dataset
+#remove columns 1 to 7
+validation <- validation[,-c(1:7)]
+#converting factors to numeric variables
+validation <- convertToNumber(validation,153)
+#impute and standardize
+validation[is.na(validation)] <- 0
+validation20 <- validation[1:20, ]
+
+predictions <- predict(fit.svm, validation20)
+confusionMatrix(predictions, validation20$classe)
+```
