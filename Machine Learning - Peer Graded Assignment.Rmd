@@ -78,7 +78,7 @@ table(which(m > 0.99, arr.ind = TRUE))
 ```
 There are many variables with high corrleation therefore running a featureplot to see the relation.
 #Plots
-```{r cache=TRUE}
+```{r}
 featurePlot(x=training[,c(1,5,9,11,12)], y=training$classe, plot = "pairs")
 ```
 
@@ -88,7 +88,7 @@ In the above featureplot, it seems that max_roll_belt and max_yaw_belt provides 
 2. max_yaw_belt
 3. max_roll_belt
 
-```{r cache=TRUE}
+```{r }
 featurePlot(x=training[,c(14,24,32,45,71,77,83,86,112,118,121)], y=training$classe, plot = "pairs")
 ```
 
